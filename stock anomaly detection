@@ -1,0 +1,83 @@
+import yfinance as yf
+import pandas as pd
+from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, accuracy_score
+import matplotlib.pyplot as plt
+
+# Replace 'AAPL' with the desired stock symbol
+symbol = 'AAPL'
+
+# Fetch historical data
+data = yf.download(symbol, start='2022-01-01', end='2023-01-01')
+
+print(data)
+
+# Feature engineering
+data['Date'] = data.index
+data['Day'] = data['Date'].dt.day
+data['Month'] = data['Date'].dt.month
+data['Year'] = data['Date'].dt.year
+data['Weekday'] = data['Date'].dt.weekday
+
+# Use a subset of features for simplicity
+features = ['Open', 'High', 'Low', 'Close', 'Volume', 'Day', 'Month', 'Year', 'Weekday']
+X = data[features]
+
+# Normalize the data
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Train-test split
+X_train, X_test = train_test_split(X_scaled, test_size=0.2, random_state=42, shuffle=False)
+
+# Convert NumPy arrays back to DataFrames
+X_train_df = pd.DataFrame(X_train, columns=features, index=data.index[:len(X_train)])
+X_test_df = pd.DataFrame(X_test, columns=features, index=data.index[len(X_train):])
+
+# Assume all data points are normal for demonstration
+data['Anomaly'] = 1  # 1 for normal data
+
+# Assume all test data points are normal for demonstration
+data.loc[X_test_df.index, 'Anomaly'] = 1  # 1 for normal data
+
+# Fit an Isolation Forest model
+model = IsolationForest(contamination=0.02, random_state=42)
+model.fit(X_train_df)
+
+# Reset column names for X_test_df to match X_train_df
+X_test_df.columns = X_train_df.columns
+
+# Predict anomalies on the test set
+y_pred = model.predict(X_test_df)
+
+# Convert predictions to binary labels (1 for normal, -1 for anomaly)
+data.loc[X_test_df.index, 'Anomaly'] = y_pred
+
+# Evaluate the model
+accuracy = accuracy_score(data['Anomaly'], [-1]*len(data))
+classification_rep = classification_report(data['Anomaly'], [-1]*len(data), zero_division=1)
+
+print(f"Model accuracy: {accuracy:.2f}")
+print("Classification Report:")
+print(classification_rep)
+# Line plot showing original data and anomalies
+plt.figure(figsize=(12, 6))
+plt.plot(data['Close'], label='Original Data')
+plt.scatter(data.index[data['Anomaly'] == -1], data['Close'][data['Anomaly'] == -1],
+            color='red', label='Anomalies')
+plt.xlabel('Date')
+plt.ylabel('Close Price')
+plt.title('Anomaly Detection in Close Price')
+plt.legend()
+plt.show()
+
+# Scatter plot showing anomaly scores for two features
+plt.figure(figsize=(8, 6))
+plt.scatter(data['Open'], data['Close'], c=data['Anomaly'], cmap='coolwarm')
+plt.xlabel('Open Price')
+plt.ylabel('Close Price')
+plt.title('Anomaly Scores for Open and Close Prices')
+plt.colorbar(label='Anomaly Score (-1: Anomaly, 1: Normal)')
+plt.show()
